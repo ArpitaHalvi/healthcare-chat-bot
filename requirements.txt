@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+twilio
+google-generativeai
+python-multipart
+pydantic
+python-dotenv
+langchain
+langchain-google-genai
+sendgrid
+certifi
+pyngrok
+requests
