@@ -1,15 +1,22 @@
 from fastapi import FastAPI, Request, Response
+
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.rest import Client
+
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, To, Email, Content
-import requests  # Add this import
-from typing import List  # Added List import
+from sendgrid.helpers.mail import Mail, To, Content
+
+from typing import List
 import json
 
+from db import init_db, db_manager
 from config import GOOGLE_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, SENDGRID_API_KEY
+
+# Initialize database
+init_db()
 
 app = FastAPI()
 
@@ -42,7 +49,6 @@ class EmailService:
 
     async def send_email(self, to_emails: List[str], subject: str, content: str) -> bool:
         try:
-            # Create personalized emails
             message = Mail(
                 from_email=self.from_email,
                 to_emails=[To(email) for email in to_emails],
@@ -50,7 +56,6 @@ class EmailService:
                 html_content=Content("text/html", content)
             )
             
-            # Send and get response
             response = self.client.send(message)
             
             if response.status_code not in [200, 201, 202]:
@@ -152,11 +157,10 @@ class ChatSession:
         except Exception:
             return "Error generating medical summary."
 
-
-
 # In-memory storage for chat sessions
 chat_sessions = {}
 
+# Initialize email service
 email_service = EmailService(
     api_key=SENDGRID_API_KEY,
     from_email='iam@robosushie.com'
@@ -166,10 +170,12 @@ email_service = EmailService(
 async def webhook(request: Request):
     try:
         form_data = await request.form()
+        # print(form_data)
         incoming_msg = form_data.get('Body', '').strip()
-        sender = form_data.get('From', '')
+        sender = form_data.get('From', '').replace('whatsapp:', '')
         
         response = MessagingResponse()
+        db = db_manager.get_db()
         
         if sender not in chat_sessions:
             chat_sessions[sender] = ChatSession()
@@ -202,19 +208,41 @@ async def webhook(request: Request):
         if session.current_question < len(MEDICAL_QUESTIONS):
             response.message(MEDICAL_QUESTIONS[session.current_question])
         else:
+            # Generate summaries
             patient_summary = await session.generate_summary()
             doctor_summary = await session.generate_doctor_summary(patient_summary)
             
-            # Get patient name from answers using correct question format
-            patient_name = session.answers.get("What is your name?", "Patient")
+            try:
+                # Save patient info to database
+                patient = await db_manager.create_or_update_patient(
+                    db=db,
+                    mobile_number=sender,
+                    name=session.answers.get("What is your name?", "Unknown"),
+                    age=int(session.answers.get("What is your age?", "0").replace('years', '').strip()),
+                    blood_group=session.answers.get("What is your blood group?", None),
+                    allergies=session.answers.get("Do you have any known allergies? If yes, please list them.", None)
+                )
+                
+                # Save consultation to database
+                await db_manager.create_consultation(
+                    db=db,
+                    patient_id=patient.id,
+                    symptoms=session.answers.get("What symptoms are you currently experiencing?", ""),
+                    symptoms_duration=session.answers.get("How long have you been experiencing these symptoms?", ""),
+                    patient_summary=patient_summary,
+                    doctor_summary=doctor_summary
+                )
             
-            # Send email with better error handling
+            except Exception as db_error:
+                print(f"Database error: {str(db_error)}")
+            
+            # Send email notification
             email_sent = await email_service.send_email(
                 to_emails=["ssamuel.sushant@gmail.com"],
-                subject=f"Medical Consultation Summary - {patient_name}",
+                subject=f"Medical Consultation Summary - {session.answers.get('What is your name?', 'Patient')}",
                 content=f"""
                 <h2>Medical Consultation Summary</h2>
-                <p><strong>Patient Name:</strong> {patient_name}</p>
+                <p><strong>Patient Name:</strong> {session.answers.get('What is your name?', 'Unknown')}</p>
                 <hr>
                 <h3>Doctor's Summary:</h3>
                 <p>{doctor_summary}</p>
@@ -234,7 +262,8 @@ async def webhook(request: Request):
                 "Say 'Hi' to start a new consultation."
             )
             response.message(final_msg)
-            session.conversation_end = True
+            # session.conversation_end = True
+            del chat_sessions[sender]
         
         return Response(content=str(response), media_type="application/xml")
             

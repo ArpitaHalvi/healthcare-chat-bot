@@ -11,3 +11,6 @@ sendgrid
 certifi
 pyngrok
 requests
+django
+SQLAlchemy
+mysql-connector-python
