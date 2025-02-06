@@ -26,6 +26,7 @@ class Patient(Base):
     age = Column(Integer)
     blood_group = Column(String(10))
     allergies = Column(Text)
+    email = Column(String(255))  # Added email field
     created_at = Column(DateTime, default=datetime.utcnow)
     
     consultations = relationship("Consultation", back_populates="patient")
@@ -55,7 +56,8 @@ class DatabaseManager:
             db.close()
 
     async def create_or_update_patient(self, db, mobile_number: str, name: str, age: int, 
-                                     blood_group: str = None, allergies: str = None) -> Patient:
+                                     blood_group: str = None, allergies: str = None,
+                                     email: str = None) -> Patient:  # Added email parameter
         try:
             mobile_number = mobile_number.replace('whatsapp:', '')
             patient = db.query(Patient).filter(Patient.mobile_number == mobile_number).first()
@@ -65,13 +67,15 @@ class DatabaseManager:
                 patient.age = age
                 patient.blood_group = blood_group
                 patient.allergies = allergies
+                patient.email = email  # Update email
             else:
                 patient = Patient(
                     mobile_number=mobile_number,
                     name=name,
                     age=age,
                     blood_group=blood_group,
-                    allergies=allergies
+                    allergies=allergies,
+                    email=email  # Add email to new patient
                 )
                 db.add(patient)
             

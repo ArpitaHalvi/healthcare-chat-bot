@@ -39,7 +39,8 @@ MEDICAL_QUESTIONS = [
     "How long have you been experiencing these symptoms?",
     "Are you currently taking any medications? If yes, please list them.",
     "Do you have any previous medical conditions or surgeries?",
-    "Have you experienced these symptoms before?"
+    "Have you experienced these symptoms before?",
+    "Do you have an email address? If yes, please enter you email address, else enter no/No"
 ]
 
 class EmailService:
@@ -220,7 +221,8 @@ async def webhook(request: Request):
                     name=session.answers.get("What is your name?", "Unknown"),
                     age=int(session.answers.get("What is your age?", "0").replace('years', '').strip()),
                     blood_group=session.answers.get("What is your blood group?", None),
-                    allergies=session.answers.get("Do you have any known allergies? If yes, please list them.", None)
+                    allergies=session.answers.get("Do you have any known allergies? If yes, please list them.", None),
+                    email=session.answers.get("Do you have an email address? If yes, please enter you email address, else enter no/No", None)  
                 )
                 
                 # Save consultation to database
